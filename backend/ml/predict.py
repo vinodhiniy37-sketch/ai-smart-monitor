@@ -1,43 +1,88 @@
 import os
 import pickle
-import numpy as np
 import pandas as pd
 from datetime import datetime
 
-from ml.train_model import MODEL_PATH, FEATURE_COLUMNS, train_isolation_forest
+from ml.train_model import (
+    MODEL_PATH_VM,
+    MODEL_PATH_CONTAINER,
+    MODEL_PATH_WORKSTATION,
+    FEATURE_COLUMNS,
+    train_all_models
+)
 from database.mongodb import db_manager
 
-_cached_model = None
+_cached_models = {}
+VALID_ENVIRONMENTS = {"cloud_vm", "cloud_container", "workstation"}
 
-def get_loaded_model():
-    """Loads and caches the trained Isolation Forest model from disk."""
-    global _cached_model
-    if _cached_model is not None:
-        return _cached_model
+def get_loaded_models():
+    """Loads and caches all environment-calibrated Isolation Forest models."""
+    global _cached_models
+    if _cached_models:
+        return _cached_models
         
-    if not os.path.exists(MODEL_PATH):
-        print("⚠️ Model file not found. Training initial Isolation Forest model...")
-        _cached_model = train_isolation_forest()
+    # Check if models exist on disk, train if missing
+    if not (os.path.exists(MODEL_PATH_VM) and os.path.exists(MODEL_PATH_CONTAINER) and os.path.exists(MODEL_PATH_WORKSTATION)):
+        print("⚠️ Calibrated model artifacts not found. Training initial models...")
+        _cached_models = train_all_models()
     else:
-        with open(MODEL_PATH, "rb") as f:
-            _cached_model = pickle.load(f)
-            
-    return _cached_model
+        with open(MODEL_PATH_VM, "rb") as f:
+            m_vm = pickle.load(f)
+        with open(MODEL_PATH_CONTAINER, "rb") as f:
+            m_container = pickle.load(f)
+        with open(MODEL_PATH_WORKSTATION, "rb") as f:
+            m_workstation = pickle.load(f)
+        _cached_models = {
+            "cloud_vm": m_vm,
+            "cloud_container": m_container,
+            "workstation": m_workstation
+        }
+    return _cached_models
+
+def detect_environment(metrics_dict):
+    """
+    Selects the environment profile using explicit configuration first,
+    falling back to PID heuristics only when unconfigured:
+    1. Validated request parameter: metrics_dict.get("environment")
+    2. Validated server configuration: os.getenv("MONITORING_ENVIRONMENT")
+    3. Structural fallback heuristic: running_processes range
+    """
+    # 1. Explicit request payload parameter
+    explicit_env = metrics_dict.get("environment")
+    if explicit_env in VALID_ENVIRONMENTS:
+        return explicit_env
+        
+    # 2. Explicit server configuration via environment variable
+    config_env = os.getenv("MONITORING_ENVIRONMENT")
+    if config_env in VALID_ENVIRONMENTS:
+        return config_env
+        
+    # 3. Fallback heuristic based on active PID count
+    procs = float(metrics_dict.get("running_processes", 0.0))
+    if procs <= 20:
+        return "cloud_container"
+    elif procs >= 150:
+        return "workstation"
+    else:
+        return "cloud_vm"
 
 def predict_metrics(metrics_dict):
     """
-    Evaluates a system metrics vector against the Scikit-learn Isolation Forest model.
+    Evaluates a system metrics vector against the environment-calibrated Isolation Forest model.
+    Preserves existing API response schema while eliminating false-positive domain shift alerts.
     
     Returns:
         dict: {
             "prediction": "NORMAL" or "ANOMALY",
             "anomaly_score": float,
-            "is_anomaly": bool
+            "is_anomaly": bool,
+            "environment": str
         }
     """
-    model = get_loaded_model()
+    models = get_loaded_models()
+    env = detect_environment(metrics_dict)
+    model = models.get(env, models["cloud_vm"])
     
-    # Extract feature values, providing safe defaults if any key is missing
     cpu = float(metrics_dict.get("cpu_usage", 0.0))
     memory = float(metrics_dict.get("memory_usage", 0.0))
     disk = float(metrics_dict.get("disk_usage", 0.0))
@@ -46,21 +91,18 @@ def predict_metrics(metrics_dict):
     
     feature_df = pd.DataFrame([[cpu, memory, disk, net_sent, processes]], columns=FEATURE_COLUMNS)
     
-    # Isolation Forest predict returns 1 for Normal, -1 for Anomaly
     raw_pred = model.predict(feature_df)[0]
-    
-    # Isolation Forest decision_function returns anomaly score (negative values indicate higher anomaly likelihood)
     raw_score = model.decision_function(feature_df)[0]
     
     prediction_label = "NORMAL" if raw_pred == 1 else "ANOMALY"
     anomaly_score_val = round(float(raw_score), 4)
     is_anomaly = bool(raw_pred == -1)
     
-    # Store prediction log in MongoDB if record is an anomaly or requested
     prediction_record = {
         "prediction": prediction_label,
         "anomaly_score": anomaly_score_val,
         "is_anomaly": is_anomaly,
+        "environment": env,
         "metrics": {
             "cpu_usage": cpu,
             "memory_usage": memory,
@@ -77,7 +119,8 @@ def predict_metrics(metrics_dict):
     return {
         "prediction": prediction_label,
         "anomaly_score": anomaly_score_val,
-        "is_anomaly": is_anomaly
+        "is_anomaly": is_anomaly,
+        "environment": env
     }
 
 def save_prediction_to_db(pred_record):

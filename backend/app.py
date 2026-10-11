@@ -88,4 +88,4 @@ if __name__ == "__main__":
     print(f"  Alerts List:      http://{host}:{port}/api/alerts")
     print(f"  Recent Alerts:    http://{host}:{port}/api/alerts/recent\n")
 
-    app.run(host=host, port=port, debug=debug)
+    app.run(host=host, port=port, debug=debug, use_reloader=False)

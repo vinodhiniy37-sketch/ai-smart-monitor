@@ -8,10 +8,9 @@ def predict_endpoint():
     """
     Endpoint: POST /api/predict
     Receives system monitoring metrics and returns an ML classification (NORMAL vs ANOMALY)
-    along with the Isolation Forest decision anomaly score.
+    along with the Isolation Forest decision anomaly score and detected environment profile.
     """
     try:
-        # Get optional JSON body input
         input_data = request.get_json(silent=True) or {}
         
         result = evaluate_system_metrics(input_data)
@@ -19,7 +18,8 @@ def predict_endpoint():
         return jsonify({
             "status": "success",
             "prediction": result["prediction"],
-            "anomaly_score": result["anomaly_score"]
+            "anomaly_score": result["anomaly_score"],
+            "environment": result.get("environment")
         }), 200
     except Exception as e:
         return jsonify({
