@@ -288,9 +288,22 @@ export default function Dashboard() {
               <Brain className="ml-brain-icon" />
               <h3>Scikit-Learn Classifier</h3>
             </div>
-            <span className="badge badge-ai">Isolation Forest</span>
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+              <span className="badge badge-ai">Isolation Forest</span>
+              {mlPrediction.environment && (
+                <span className="badge badge-ai" style={{ textTransform: 'none', letterSpacing: 'normal' }}>
+                  {mlPrediction.environment}
+                </span>
+              )}
+            </div>
           </div>
           <div className="ml-body">
+            <div className="ml-status-row">
+              <span className="label">Profile Environment</span>
+              <span className="value font-mono">
+                {mlPrediction.environment || 'Auto-calibrated'}
+              </span>
+            </div>
             <div className="ml-status-row">
               <span className="label">ML Classification</span>
               <span className={mlPrediction.prediction === 'ANOMALY' ? 'value text-error' : 'value text-success'}>

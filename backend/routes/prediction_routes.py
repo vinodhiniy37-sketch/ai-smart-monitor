@@ -12,8 +12,9 @@ def predict_endpoint():
     """
     try:
         input_data = request.get_json(silent=True) or {}
+        save_telemetry = bool(input_data.pop("save_telemetry", False)) if isinstance(input_data, dict) else False
         
-        result = evaluate_system_metrics(input_data)
+        result = evaluate_system_metrics(input_data, save_telemetry=save_telemetry)
         
         return jsonify({
             "status": "success",

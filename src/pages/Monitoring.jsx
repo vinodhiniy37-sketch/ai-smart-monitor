@@ -20,7 +20,12 @@ import {
   CartesianGrid, 
   Tooltip 
 } from 'recharts';
-import { fetchCurrentMonitoring, fetchMonitoringHistory } from '../services/api.js';
+import { 
+  fetchCurrentMonitoring, 
+  fetchMonitoringHistory, 
+  formatNetworkRate, 
+  formatByteTotal 
+} from '../services/api.js';
 import './Monitoring.css';
 
 export default function Monitoring() {
@@ -170,18 +175,23 @@ export default function Monitoring() {
               <Network className="t-icon text-green" />
             </div>
             <div>
-              <span className="t-label">Network Sent</span>
-              <h3 className="t-value">{Math.round((metrics.network_sent || 0) / (1024 * 1024))} MB</h3>
+              <span className="t-label">Loopback Rate</span>
+              <h3 className="t-value">{formatNetworkRate(metrics.network_sent)}</h3>
             </div>
           </div>
           <div className="t-progress-wrapper">
             <div className="t-progress-track">
-              <div className="t-progress-fill gradient-green" style={{ width: `65%` }}></div>
+              <div 
+                className="t-progress-fill gradient-green" 
+                style={{ width: `${Math.min(100, Math.max(5, (Number(metrics.network_sent) || 0) * 2))}%` }}
+              ></div>
             </div>
           </div>
           <div className="t-info-row">
             <TrendingUp className="trend-arrow" />
-            <span className="trend-lbl">Received: {Math.round((metrics.network_received || 0) / (1024 * 1024))} MB</span>
+            <span className="trend-lbl">
+              Total: {formatByteTotal(metrics.network_sent_system_total)} sent / {formatByteTotal(metrics.network_received)} recv
+            </span>
           </div>
         </div>
 
